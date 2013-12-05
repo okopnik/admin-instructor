@@ -1,0 +1,92 @@
+#!/usr/bin/perl -l
+# By Ben Okopnik 11/27/2013 Version 0.8
+# Sanity checker for Hadoop conffile <name> tags
+#
+# Copyright 2013 Ben Okopnik
+# 
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+############ User-configurable ####################
+# Source file URL
+my $source_http = 'http://okopnik.com/Cloudera';
+############ User-configurable ####################
+
+use warnings;
+use strict;
+
+my ($k, %data, %deprecated);
+
+# Get the conf data
+die "You need to install 'wget'. Aborting...\n" unless -f '/usr/bin/wget';
+my $fetch = qx[/usr/bin/wget -q $source_http/confcheck.data -O -];
+die "Fetch failed; check your network connection.\n" if length($fetch) < 1024;
+
+# Name validation pattern
+my $pat = qr{(?:[-\w]+\.)+[-\w]+};
+
+# Populate validator hash
+for (split /\n/, $fetch){
+    chomp;
+    next if /^\s*(?:#|$)/;
+    # Section headers
+    if (m#^(deprecated|/.*\.xml)\s*$#){
+        $k = $1;
+        next;
+    }
+
+    s/^\s*|\s*$//;
+
+    if ($k eq 'deprecated'){
+        die "Incorrect input format in the '$k' section; please report to maintainer!\n"
+            unless /^$pat\s+$pat$/;
+        my ($a, $b) = split;
+        $deprecated{$a} = $b;
+    }
+    else {
+        die "Incorrect input format in the '$k' section; please report to maintainer!\n"
+            unless /^$pat$/;
+        $data{$k}{$_}++;
+    }
+}
+
+# Populate a '-site.xml' for every '-default.xml'
+for my $f (keys %data){
+    if ($f =~ /(.*)-default\.xml/ && !exists $data{"$1-site.xml"}){
+        for (keys %{$data{$f}}){
+            $data{"$1-site.xml"}{$_}++;
+        }
+    }
+}
+
+my $errors = 0;
+for my $file (keys %data){
+    next unless -f $file;
+    open my $Fh, '<', $file or die "$file: $!\n";
+    my $content = do { local $/; <$Fh>; };
+    close $Fh;
+
+    print "Reading '$file':";
+    for my $name ($content =~ m[<name>\s*([^<]+?)\s*</name>]g){
+        if (!exists $data{$file}{$name}){
+            if (exists $deprecated{$name}){
+                print "\tNOTE: '$name' is deprecated; use '$deprecated{$name}' instead.";
+            }
+            else {
+                print "\t'$name' is not a valid property name.";
+            }
+            $errors++;
+        }
+
+    }
+}
+print "\n", $errors?"$errors":"No", " PROPERTY NAME error", $errors==1?"":"s", " found.\n";
