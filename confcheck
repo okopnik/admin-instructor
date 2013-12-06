@@ -39,7 +39,7 @@ for (split /\n/, $fetch){
     chomp;
     next if /^\s*(?:#|$)/;
     # Section headers
-    if (m#(^deprecated)\s*$|^(/.*)-(?:site|default)\.xml\s*$#){
+    if (m#^(deprecated)\s*$|^(/.*)-(?:site|default)\.xml\s*$#){
         $k = $+;
         next;
     }
