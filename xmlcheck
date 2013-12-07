@@ -1,0 +1,27 @@
+#!/usr/bin/perl
+# By: Ben Okopnik <ben@okopnik.com>, 21:20 2013-12-06
+# A fairly naive XML validator
+use warnings;
+use strict;
+
+my $xml = do { local $/; <>; };
+my $content = $xml;
+my $l;
+
+# Get rid of standard header and any comment lines
+$content =~ s/<\?xml version[^>]+>//;
+$content =~ s/<!--.*?-->//gs;
+
+do {
+    $l = length($content);
+    # Smallest innermost chunk not containing a tag
+    $content =~ s#<([^ >]+)(?: [^>]+)?>([^<>]*)</\1>##s;
+    if (!defined $1){
+        if ($content =~ /\S/){
+            print "WARNING: Possibly malformed tag structure in file!\n";
+            print "\n$1\n\n" if $content =~ m#(<[^>]+>[^<]*</[^>]+>)#;
+            exit 1;
+        }
+    }
+} while length($content) < $l;
+
