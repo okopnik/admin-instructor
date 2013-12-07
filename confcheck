@@ -1,5 +1,5 @@
 #!/usr/bin/perl -l
-# By Ben Okopnik 11/27/2013 Version 0.85
+# By Ben Okopnik 11/27/2013 Version 0.92
 # Sanity checker for Hadoop conffile <name> tags
 #
 # Copyright 2013 Ben Okopnik
@@ -19,6 +19,8 @@
 ############ User-configurable ####################
 # Source file URL
 my $source_http = 'http://okopnik.com/Cloudera';
+# Toggle debugging messages (0/1)
+my $debug = 0;
 ############ User-configurable ####################
 
 use warnings;
@@ -61,14 +63,49 @@ for (split /\n/, $fetch){
     }
 }
 
-my $errors = 0;
+# Basic, but hopefully sufficient, XML validation
+sub valid_xml {
+    my $fn = shift;
+    my $xml = shift;
+    die "'$fn' contains no data\n" unless $xml;
+
+    my $l;
+
+    # Get rid of standard header and any comment lines
+    $xml =~ s/<\?xml version[^>]+>//;
+    $xml =~ s/<!--.*?-->//gs;
+
+    do {
+        $l = length($xml);
+        # "Eat" the smallest innermost chunk not containing a tag
+        $xml =~ s#<([^ >]+)(?: [^>]+)?>([^<>]*)</\1>##s;
+        # Once there are no more tagged entities, check for remaining content
+        if (defined $1){
+            print "$fn: <$1></$1> match" if $debug;
+        }
+        else {
+            if ($xml =~ /\S/){
+                $xml =~ s/\s*\n+/\n/gs;
+                print "WARNING: Possible malformed tag structure in '$fn'";
+                print "\n$1\n" if $xml =~ m#(<[^>]+>[^<]*</[^>]+>)#;
+                exit 1;
+            }
+        }
+    } while length($xml) < $l;
+}
+
+
+my $fcount = my $errors = 0;
 for my $file (keys %data){
     next unless -f $file;
+    $fcount++;
     open my $Fh, '<', $file or die "$file: $!\n";
-    my $content = do { local $/; <$Fh>; };
+    my $xml = my $content = do { local $/; <$Fh>; };
     close $Fh;
 
-    print "Reading '$file':";
+    valid_xml($file, $xml);
+
+    print "Reading '$file':" if $debug;
     for my $name ($content =~ m[<name>\s*([^<]+?)\s*</name>]g){
         if (!exists $data{$file}{$name}){
             if (exists $deprecated{$name}){
@@ -82,5 +119,6 @@ for my $file (keys %data){
 
     }
 }
-print "\n", $errors?"$errors":"No", " PROPERTY NAME error", $errors==1?"":"s", " found.\n";
+print "\n", $errors?"$errors":"No", " PROPERTY NAME error", $errors==1?"":"s", " found in $fcount files.\n"
+    unless $fcount == 0;
 
