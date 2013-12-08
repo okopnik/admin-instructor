@@ -7,6 +7,10 @@ deprecated
     dfs.namenode.http-address dfs.http.address
 
 /etc/hadoop/conf/core-default.xml
+	hadoop.proxyuser.oozie.hosts
+	hadoop.proxyuser.oozie.groups
+	hadoop.proxyuser.httpfs.hosts
+	hadoop.proxyuser.httpfs.groups
 	hadoop.common.configuration.version
 	hadoop.tmp.dir
 	io.native.lib.available
@@ -426,6 +430,9 @@ deprecated
 	mapreduce.jobhistory.store.class
 	mapreduce.jobhistory.minicluster.fixed.ports
 /etc/hadoop/conf/hdfs-default.xml
+    dfs.safemode.extension
+    dfs.safemode.min.datanodes
+    hadoop.tmp.dir
 	dfs.https.address
 	dfs.https.port
 	fs.permissions.umask-mode

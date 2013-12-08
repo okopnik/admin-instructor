@@ -72,7 +72,7 @@ sub valid_xml {
     my $l;
 
     # Get rid of standard header and any comment lines
-    $xml =~ s/<\?xml version[^>]+>//;
+    $xml =~ s/<\?xml[^>]+>//gs;
     $xml =~ s/<!--.*?-->//gs;
 
     do {
@@ -88,6 +88,7 @@ sub valid_xml {
                 $xml =~ s/\s*\n+/\n/gs;
                 print "WARNING: Possible malformed tag structure in '$fn'";
                 print "\n$1\n" if $xml =~ m#(<[^>]+>[^<]*</[^>]+>)#;
+		print $xml if $debug;
                 exit 1;
             }
         }
