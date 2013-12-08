@@ -430,6 +430,7 @@ deprecated
 	mapreduce.jobhistory.store.class
 	mapreduce.jobhistory.minicluster.fixed.ports
 /etc/hadoop/conf/hdfs-default.xml
+    dfs.name.dir
     dfs.safemode.extension
     dfs.safemode.min.datanodes
     hadoop.tmp.dir
