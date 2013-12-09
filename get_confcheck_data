@@ -1,0 +1,28 @@
+#!/bin/bash
+# By: Ben Okopnik <ben@okopnik.com>, 11:47 2013-12-09
+# Update 'confcheck.data' from the relevant Cloudera URLs
+
+cat <<! >confcheck.data
+# The format of the 'deprecated' section is 'OLD_NAME NEW_NAME', separated by spaces or tabs;
+# all other sections simply contain the (valid) property names. NOTE: If the header for a section
+# is named '*-default.xml', the equivalent '-site.xml' file will also be checked.
+
+!
+
+url='http://archive.cloudera.com/cdh4/cdh/4/hadoop'
+s='Deprecated property name'
+t='NONE - symlinking is always on'
+u=`echo -n $t|tr -cs 'A-Za-z' '.'`
+echo 'deprecated' >> confcheck.data
+wget -q -nd -O - $url/hadoop-project-dist/hadoop-common/DeprecatedProperties.html|\
+    gunzip -c -|lynx -width 1024 -nolist -dump -stdin|\
+    sed '1,/'"$s"'/d;/^$/,/'"$s"'/d;s/'"$t"'/'"$u"'/;/[a-z]\.[a-z]\+\.[a-z]/!d' >> confcheck.data
+
+for n in hadoop-project-dist/hadoop-common/core-default.xml hadoop-project-dist/hadoop-hdfs/hdfs-default.xml hadoop-mapreduce-client/hadoop-mapreduce-client-core/mapred-default.xml hadoop-yarn/hadoop-yarn-common/yarn-default.xml
+do
+    echo "/etc/hadoop/conf/`basename $n`" >> confcheck.data
+    wget -q -nd -O - $url/$n|sed -n 's#.*<name>\(.*\)</name>.*#\t\1#;T;p' >> confcheck.data
+done
+
+# Fix the misspelled prop at http://archive.cloudera.com/cdh4/cdh/4/hadoop/hadoop-project-dist/hadoop-common/DeprecatedProperties.html
+sed -i 's/\.\././' confcheck.data

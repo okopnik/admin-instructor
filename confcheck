@@ -1,5 +1,5 @@
-#!/usr/bin/perl -l
-# By Ben Okopnik 11/27/2013 Version 0.94
+#!/usr/bin/perl -sl
+# By Ben Okopnik 11/27/2013 Version 0.95
 # Sanity checker for Hadoop conffile <name> tags
 #
 # Copyright 2013 Ben Okopnik
@@ -19,14 +19,17 @@
 ############ User-configurable ####################
 # Source file URL
 my $source_http = 'http://okopnik.com/Cloudera';
-# Toggle debugging messages (0/1)
-my $debug = 0;
+# Toggle debugging messages (0/1); can be set here or via './confcheck -D'
+our $D;
+my $debug = $D||0;
 ############ User-configurable ####################
 
 use warnings;
 use strict;
 
 my ($k, %data, %deprecated);
+
+print "############# Debugging: ON ###############" if $debug;
 
 # Get the conf data
 die "You need to install 'wget'. Aborting...\n" unless -f '/usr/bin/wget';
@@ -49,13 +52,13 @@ for (split /\n/, $fetch){
     s/^\s*|\s*$//;
 
     if ($k eq 'deprecated'){
-        die "Incorrect input format in the '$k' section; please report to maintainer!\n"
+        die "Incorrect input format in the '$k' section ('$_'); please report to maintainer!\n"
             unless /^$pat\s+$pat$/;
         my ($a, $b) = split;
         $deprecated{$a} = $b;
     }
     else {
-        die "Incorrect input format in the '$k' section; please report to maintainer!\n"
+        die "Incorrect input format in the '$k' section ('$_'); please report to maintainer!\n"
             unless /^$pat$/;
         # Fully populate both the '-default' and the '-site' versions
         $data{"$k-default.xml"}{$_}++;
