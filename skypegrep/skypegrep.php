@@ -47,6 +47,8 @@ error_reporting(E_ALL);
 ini_set('display_errors', '1');
 date_default_timezone_set('UTC');
 
+$here = $_SERVER['PHP_SELF'];
+
 // Load the auth info
 require_once('.htinfo');
 
@@ -55,44 +57,44 @@ require_once('.htinfo');
 //    exit;
 //}
 
-$db = mysqli_connect($db['host'], $db['user'], $db['password'], 'db') or die("Error ".mysqli_error($db));
-mysqli_query($db, "SET NAMES 'utf8'");
-mysqli_query($db, "SET CHARACTER SET utf8");
+$dbc = mysqli_connect($db['host'], $db['user'], $db['password'], 'db') or die("Error ".mysqli_error($dbc));
+mysqli_query($dbc, "SET NAMES 'utf8'");
+mysqli_query($dbc, "SET CHARACTER SET utf8");
 
 if (empty($_GET['limit'])){ $limit = 30; } else { $limit = $_GET['limit']; }
 
 $do_tables = 0;
 # Check for/create tables as necessary
-if (mysqli_num_rows(mysqli_query($db, "SHOW TABLES LIKE 'Messages'")) == 0){
+if (mysqli_num_rows(mysqli_query($dbc, "SHOW TABLES LIKE 'Messages'")) == 0){
     $do_tables++;
     echo "'Messages' table not found; creating... ";
-    $res = mysqli_query($db, "CREATE TABLE Messages(id INT NOT NULL AUTO_INCREMENT,PRIMARY KEY(id),tag VARCHAR(64),name VARCHAR(64),timestamp INT(11),text VARCHAR(2048))");
-    if (!$res){ printf("Error creating 'Messages': <b>%s</b><br>", mysqli_error($db)); } else { echo "Success.<br>"; }
+    $res = mysqli_query($dbc, "CREATE TABLE Messages(id INT NOT NULL AUTO_INCREMENT,PRIMARY KEY(id),tag VARCHAR(64),name VARCHAR(64),timestamp INT(11),text VARCHAR(2048))");
+    if (!$res){ printf("Error creating 'Messages': <b>%s</b><br>", mysqli_error($dbc)); } else { echo "Success.<br>"; }
 }
-if (mysqli_num_rows(mysqli_query($db, "SHOW TABLES LIKE 'Linked'")) == 0){
+if (mysqli_num_rows(mysqli_query($dbc, "SHOW TABLES LIKE 'Linked'")) == 0){
     $do_tables++;
     echo "'Linked' table not found; creating...<br>";
-    $res = mysqli_query($db, "CREATE TABLE Linked(id INT NOT NULL AUTO_INCREMENT,PRIMARY KEY(id),query VARCHAR(256),type CHAR(1),answer INT)");
-    if (!$res){ printf("Error creating 'Linked': <b>%s</b><br>", mysqli_error($db)); } else { echo "Success.<br>"; }
+    $res = mysqli_query($dbc, "CREATE TABLE Linked(id INT NOT NULL AUTO_INCREMENT,PRIMARY KEY(id),query VARCHAR(256),type CHAR(1),answer INT)");
+    if (!$res){ printf("Error creating 'Linked': <b>%s</b><br>", mysqli_error($dbc)); } else { echo "Success.<br>"; }
 }
 
 if ($do_tables > 0){
-    echo "<p class='back'><a href='skypegrep.php'>Return to search</a></p>";
+    echo "<p class='back'><a href='$here'>Return to search</a></p>";
     exit;
 }
 
 if (!empty($_GET['id'])){
-    $srch = mysqli_real_escape_string($db, $_GET['search']);
-    $id = mysqli_real_escape_string($db, $_GET['id']);
+    $srch = mysqli_real_escape_string($dbc, $_GET['search']);
+    $id = mysqli_real_escape_string($dbc, $_GET['id']);
     $type = $_GET['type'];
     $q = "INSERT INTO Linked VALUES(NULL, '$srch', '$type', $id)";
-    if (!mysqli_query($db, $q)) printf("Error: %s\n", mysqli_error($db));
+    if (!mysqli_query($dbc, $q)) printf("Error: %s\n", mysqli_error($dbc));
 }
 
 if (!empty($_GET['search']) AND empty($_GET['ts'])){
-    $s = mysqli_escape_string($db, $_GET['search']);
+    $s = mysqli_escape_string($dbc, $_GET['search']);
     $query = "SELECT * FROM Messages WHERE text LIKE '%$s%'";
-    $result = mysqli_query($db, $query) or die("Error".mysqli_error($db));
+    $result = mysqli_query($dbc, $query) or die("Error".mysqli_error($dbc));
 
     $count = mysqli_num_rows($result);
     if($count == 0){
@@ -113,7 +115,7 @@ if (!empty($_GET['search']) AND empty($_GET['ts'])){
                 if (strlen($text) < 200) $text = str_pad($text, 200);
                 $name = str_replace(' ', '&nbsp;', $name);
                 $line = "<span class='light'>".date('m/d/y',$row['timestamp'])." $name</span><br>".strip_tags($text);
-                $lnk = $_SERVER['PHP_SELF']."?ts=".$row['timestamp']."&search=$s";
+                $lnk = "$here?ts=".$row['timestamp']."&search=$s";
                 echo "<td><div class='wrap'><a href='$lnk'>$line</a></div></td>\n";
                 if ($c % 6 == 0) echo "</tr><tr>\n";
             }
@@ -126,7 +128,7 @@ else if (!empty($_GET['ts'])){
     $ts = $_GET['ts'];
     $s = htmlspecialchars($_GET['search']);
     $query = "SELECT * FROM Messages where timestamp >= $ts LIMIT $limit";
-    $result = mysqli_query($db, $query) or die("Error".mysqli_error($db));
+    $result = mysqli_query($dbc, $query) or die("Error".mysqli_error($dbc));
 
     echo '<table border=0>';
     while($row = mysqli_fetch_array($result)) {
@@ -134,16 +136,16 @@ else if (!empty($_GET['ts'])){
             $text = html_entity_decode($row['text']);
             $id = $row['id'];
             $text = preg_replace("/($s)/", "<span class='hl'>$1</span>", $text);
-            $ctx_q = "<a href='skypegrep.php?search=$s&ts=$ts&limit=$limit&id=$id&type=q'><strong>Q</strong>&nbsp;<img src='thumb.png'></a>";
-            $ctx_a = "<a href='skypegrep.php?search=$s&ts=$ts&limit=$limit&id=$id&type=a'><strong>A</strong>&nbsp;<img src='thumb.png'></a>";
+            $ctx_q = "<a href='$here?search=$s&ts=$ts&limit=$limit&id=$id&type=q'><strong>Q</strong>&nbsp;<img src='thumb.png'></a>";
+            $ctx_a = "<a href='$here?search=$s&ts=$ts&limit=$limit&id=$id&type=a'><strong>A</strong>&nbsp;<img src='thumb.png'></a>";
             $line = '['.date('m/d/y h:i',$row['timestamp'])."] <font color='green'><b>[".$row['name']."]</b></font> $text";
             echo "<tr><td width='100'><span class='mark'>$ctx_q</span>&nbsp;<span class='mark'>$ctx_a</span></td><td><span class='skype'>$line</span></td></tr>";
         }
     }
     echo '</table>';
     $limit += 20;
-    echo "<p class='back'><a href='skypegrep.php?ts=$ts&search=$s&limit=$limit'>Extend by 20 posts</a></p>";
-    echo "<p class='back'><a href='skypegrep.php'>Return to search</a></p>";
+    echo "<p class='back'><a href='$here?ts=$ts&search=$s&limit=$limit'>Extend by 20 posts</a></p>";
+    echo "<p class='back'><a href='$here'>Return to search</a></p>";
 }
 
 ?>

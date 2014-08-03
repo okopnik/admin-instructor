@@ -8,21 +8,74 @@ cat <<! >confcheck.data
 # is named '*-default.xml', the equivalent '-site.xml' file will also be checked.
 
 !
-
-url='http://archive.cloudera.com/cdh4/cdh/4/hadoop'
+url='http://archive.cloudera.com/cdh5/cdh/5/hadoop'
 s='Deprecated property name'
-t='NONE - symlinking is always on'
-u=`echo -n $t|tr -cs 'A-Za-z' '.'`
 echo 'deprecated' >> confcheck.data
 wget -q -nd -O - $url/hadoop-project-dist/hadoop-common/DeprecatedProperties.html|\
     gunzip -c -|lynx -width 1024 -nolist -dump -stdin|\
-    sed '1,/'"$s"'/d;/^$/,/'"$s"'/d;s/'"$t"'/'"$u"'/;/[a-z]\.[a-z]\+\.[a-z]/!d' >> confcheck.data
+    sed '1,/'"$s"'/d;/^$/,/'"$s"'/d;/[a-z]\.[a-z]\+\.[a-z]/!d' >> confcheck.data
 
-for n in hadoop-project-dist/hadoop-common/core-default.xml hadoop-project-dist/hadoop-hdfs/hdfs-default.xml hadoop-mapreduce-client/hadoop-mapreduce-client-core/mapred-default.xml hadoop-yarn/hadoop-yarn-common/yarn-default.xml
+# Extra stuff for Impala, QJM, ZK, etc.
+### This WOULD have been better as an array... but I managed to trigger a
+### buffer overflow bug in Bash (reported), so gotta be crude here.
+core='
+    hadoop.proxyuser.httpfs.hosts
+    hadoop.proxyuser.httpfs.groups
+    hadoop.proxyuser.oozie.hosts
+    hadoop.proxyuser.oozie.groups
+    hadoop.proxyuser.hue.hosts
+    hadoop.proxyuser.hue.groups
+'
+hdfs='
+    dfs.client.read.shortcircuit
+	dfs.ha.namenodes.mycluster
+	dfs.namenode.rpc-address.mycluster.nn1
+	dfs.namenode.rpc-address.mycluster.nn2
+	dfs.namenode.http-address.mycluster.nn1
+	dfs.namenode.http-address.mycluster.nn2
+	dfs.journalnode.edits.dir
+	dfs.client.failover.proxy.provider.mycluster
+	dfs.ha.fencing.methods
+    dfs.safemode.min.datanodes
+'
+mapred='
+    jobtracker.thrift.address
+	mapred.jobtracker.plugins
+	mapreduce.map.java.opts
+	mapreduce.reduce.java.opts
+    mapred.fairscheduler.allocation.file
+    mapred.fairscheduler.poolnameproperty
+'
+
+hive='
+    javax.jdo.option.ConnectionURL	
+    javax.jdo.option.ConnectionDriverName	
+    javax.jdo.option.ConnectionUserName	
+    javax.jdo.option.ConnectionPassword	
+    datanucleus.autoCreateSchema
+    datanucleus.fixedDatastore
+    datanucleus.autoStartMechanism
+    hive.metastore.uris	
+    hive.support.concurrency	
+    hive.zookeeper.quorum
+    hive.stats.autogather
+'
+#########################################################################################################
+### The '*-FAKE/VALUE' placeholders accomodate the client config files, and can be added arbitrarily. ###
+#########################################################################################################
+for n in 'hadoop-project-dist/hadoop-common/core-default.xml' 'hadoop-project-dist/hadoop-hdfs/hdfs-default.xml' 'hadoop-mapreduce-client/hadoop-mapreduce-client-core/mapred-default.xml' 'hadoop-yarn/hadoop-yarn-common/yarn-default.xml' 'impala-FAKE/VALUE/hdfs-default.xml' 'impala-FAKE/VALUE/core-default.xml' 'hive-FAKE/VALUE/hive-default.xml' 'hadoop-FAKE/VALUE/hive-default.xml'
 do
-    echo "/etc/hadoop/conf/`basename $n`" >> confcheck.data
-    wget -q -nd -O - $url/$n|sed -n 's#.*<name>\(.*\)</name>.*#\t\1#;T;p' >> confcheck.data
+    loc="${n%%-*}"
+    fn="/etc/$loc/conf/`basename $n`"
+    base=`basename $fn '-default.xml'`
+    echo "$fn" >> confcheck.data
+    for m in ${!base}; do echo -e "\t$m" >> confcheck.data; done
+    
+    [ "$loc" == 'hadoop' ] && \
+        wget -q -nd -O - $url/$n|sed -n 's#.*<name>\(.*\)</name>.*#\t\1#;T;p' >> confcheck.data
 done
 
 # Fix the misspelled prop at http://archive.cloudera.com/cdh4/cdh/4/hadoop/hadoop-project-dist/hadoop-common/DeprecatedProperties.html
+### Need to file a JIRA with *somebody*...
 sed -i 's/\.\././' confcheck.data
+

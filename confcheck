@@ -1,8 +1,8 @@
 #!/usr/bin/perl -sl
-# By Ben Okopnik 11/27/2013 Version 0.95
+# By Ben Okopnik 4/27/2014 Version 1.27
 # Sanity checker for Hadoop conffile <name> tags
 #
-# Copyright 2013 Ben Okopnik
+# Copyright 2013-2014 Ben Okopnik
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,20 +16,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-############ User-configurable ####################
-# Source file URL
-my $source_http = 'http://okopnik.com/Cloudera';
-# Toggle debugging messages (0/1); can be set here or via './confcheck -D'
-our $D;
-my $debug = $D||0;
-############ User-configurable ####################
-
 use warnings;
 use strict;
 
-my ($k, %data, %deprecated);
+# Toggle deprecation warnings (0/1); can be set here or via '/.confcheck -w'
+our $w;
+my $warn =  $w||0;
 
-print "############# Debugging: ON ###############" if $debug;
+# Source file URL
+my $source_http = 'http://okopnik.com/Cloudera';
+
+my ($err, $k, %data, %deprecated) = 0;
+my $A="\e[7m";			          # 'Standout' (SMSO) mode
+my $Z="\e[27m";			          # 'Normal' (RMSO) mode
+my $re = qr/([^\011\012\015\040-\176])/;  # "Inverted" list of valid chars
 
 # Get the conf data
 die "You need to install 'wget'. Aborting...\n" unless -f '/usr/bin/wget';
@@ -52,9 +52,9 @@ for (split /\n/, $fetch){
     s/^\s*|\s*$//;
 
     if ($k eq 'deprecated'){
+        my ($a, $b);
         die "Incorrect input format in the '$k' section ('$_'); please report to maintainer!\n"
-            unless /^$pat\s+$pat$/;
-        my ($a, $b) = split;
+            unless ($a, $b) = /^($pat)\s+(.*)$/;
         $deprecated{$a} = $b;
     }
     else {
@@ -66,66 +66,101 @@ for (split /\n/, $fetch){
     }
 }
 
-# Basic, but hopefully sufficient, XML validation
-sub valid_xml {
+# Cheat in the impala hdfs-* and core-* pieces
+for (keys %{$data{'/etc/hadoop/conf/hdfs-default.xml'}}){
+    $data{'/etc/impala/conf/hdfs-default.xml'}{$_}++;
+    $data{'/etc/impala/conf/hdfs-site.xml'}{$_}++;
+}
+for (keys %{$data{'/etc/hadoop/conf/core-default.xml'}}){
+    $data{'/etc/impala/conf/core-default.xml'}{$_}++;
+    $data{'/etc/impala/conf/core-site.xml'}{$_}++;
+}
+
+sub validate {
     my $fn = shift;
     my $xml = shift;
     die "'$fn' contains no data\n" unless $xml;
 
-    my $l;
+    # Get rid of comments
+    $xml =~ s/<!--.*?-->//gsm;
 
-    # Get rid of standard header and any comment lines
-    $xml =~ s/<\?xml[^>]+>//gs;
-    $xml =~ s/<!--.*?-->//gs;
+    my @lines = split /\n/, $xml;
 
-    do {
-        $l = length($xml);
-        # "Eat" the smallest innermost chunk not containing a tag
-        $xml =~ s#<([^ >]+)(?: [^>]+)?>([^<>]*)</\1>##s;
-        # Once there are no more tagged entities, check for remaining content
-        if (defined $1){
-            print "$fn: <$1></$1> match" if $debug;
-        }
-        else {
-            if ($xml =~ /\S/){
-                $xml =~ s/\s*\n+/\n/gs;
-                print "WARNING: Possible malformed tag structure in '$fn'";
-                print "\n$1\n" if $xml =~ m#(<[^>]+>[^<]*</[^>]+>)#;
-		print $xml if $debug;
-                exit 1;
+    if ($xml !~ s#\s*<configuration>(.*)</configuration>\s*#$1#ms){
+        print "'$fn':\t\tMissing '<configuration>' entity!";
+        $err++;
+    }
+
+    my $valid = join '\b|\b', keys %{$data{$fn}};
+    my $dep = join '\b|\b', keys %deprecated;
+
+    # Check names for validity and deprecation; check all for non-ASCII chars
+    for (0..$#lines){
+        if ($lines[$_] =~ m{<name>([^<>]+)</name>}){
+            my $n = $1;
+            if ($n =~ /\b$valid\b/){
+                print "Valid entry for '$n'" if $warn;
             }
-        }
-    } while length($xml) < $l;
+            elsif ($n =~ /\b$dep\b/){
+                print "Deprecated (but still valid) entry for '$n'" if $warn;
+            }
+            else {
+                print "'$fn', line ",$_+1,":\tinvalid name ('$n')";
+                $err++;
+            }
+       }
+       # Spotlight 'weird' characters
+       if ($lines[$_] =~ s/$re/"$A\\" . sprintf("0x%02x", ord $1) . $Z/eg){
+           print "'$fn', line ",$_+1,": $lines[$_]";
+           $err++;
+       }
+    }
+
+    ################# Structure check ########################
+    # Get rid of headers
+    $xml =~ s/\s*<\?xml[^<>]+\?>\s*//gs;
+
+    # Handle the exceptions to the rule...
+    my $search = '<property>\s*<name>dfs\.ha\.fencing\.methods</name>\s*<value>[^<>]+</value>\s*</property>';
+    $xml =~ s#\A\s*$search|$search\s*\Z##s;
+    $search = '<property>\s*<name>yarn\.application\.classpath</name>\s*<value>[^<>]+</value>\s*</property>';
+    $xml =~ s#\s*$search\s*##s;
+
+    # Remove all correctly-structured "paragraphs"
+    $search = qr{<property>\s*(?:<description>[^<>]+</description>\s*)?\s*<name>[^<>\s]+</name>\s*<value>[^<>\s]+</value>\s*(?:<description>[^<>]+</description>\s*)?</property>};
+    1 while $xml =~ s#\A\s*$search|$search\s*\Z##s;
+
+    # "Once you eliminate the impossible, whatever remains, no matter how improbable, must be the truth."
+    if ($xml =~ /\S/){
+        print "\n **** Structural or whitespace error(s) in '$fn' ****\n$xml";
+        $err++;
+    }
 }
 
+##################### Main section #############################
 my @fchecked;
-my $err = 0;
+my $depr = 0;
 for my $file (keys %data){
+    printf "Checking for '$file'... " if $warn;
+    print -f $file ? "found." : "not found." if $warn;
     next unless -f $file;
     push @fchecked, $file;
     open my $Fh, '<', $file or die "$file: $!\n";
     my $xml = my $content = do { local $/; <$Fh>; };
     close $Fh;
 
-    valid_xml($file, $xml);
-
-    print "Reading '$file':" if $debug;
-    for my $name ($content =~ m[<name>\s*([^<]+?)\s*</name>]g){
-        if (!exists $data{$file}{$name}){
-            if (exists $deprecated{$name}){
-                print "\tNOTE: '$name' is deprecated; use '$deprecated{$name}' instead.";
-            }
-            else {
-                print "\t$file: '$name' is not a valid property name.";
-            }
-            $err++;
-        }
-
-    }
+    validate($file, $xml);
 }
 
-if ($debug){
+if ($warn){
     $" = "\n\t";
     print $err?"$err":"No", " property name error", $err==1?"":"s", " found in\n\t@fchecked",
         unless @fchecked == 0;
 }
+else {
+    print "\n$err error", $err==1?"":"s", " found." if @fchecked;
+}
+if ($depr){
+    print "\nNOTE: $depr deprecated entries found; rerun with '-w' to see them.\n" unless $warn;
+}
+
