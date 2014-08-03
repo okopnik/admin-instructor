@@ -1,0 +1,51 @@
+#!/bin/bash
+# By Ben Okopnik 2014, based on a Perl script by Tom Wheeler 2012
+# Advanced search of the Skype chat history
+ 
+syntax="Usage: ${0##*/} <search_term|COLUMN='search_term'> [AND COLUMN='search_term'] [...]
+
+COLUMNS:
+body_xml
+author 
+from_dispname 
+date
+"
+
+[ -z "$1" ] && { echo "$syntax"; exit 1; }
+
+call_db () {
+    WHERE="$1"
+    query='SELECT datetime(timestamp, '"'"'unixepoch'"'"') AS date, author, body_xml FROM Messages '"$WHERE"' ORDER BY timestamp;'
+     
+    # Search the multiple accounts under a given $USER if they exist
+    IFS=$'\n'
+    dbs=($(find ${HOME} -wholename '*Skype/*/main.db' 2>/dev/null))
+     
+    for db in ${dbs[*]}
+    do
+        user=$(echo $db|sed 's#.*Skype/##; s#/main.db##')
+        echo "=== Searching Skype history for '$WHERE' in '$user' ==="
+        sqlite3 $db "$query"|sed 's/\&apos;/\x27/g;s/\&quot;/"/g;s/\&amp;/\&/g'
+    done
+}
+
+where='WHERE '
+if [ "$#" -eq 1 ] && grep -qv '=' <<< "$1"
+then
+    call_db "WHERE body_xml LIKE '%$1%' "
+else
+    for n
+    do
+        grep -qi 'and' <<< "$n" && { where="$where AND "; continue; }
+        query=($(sed 's/.*/'"'"'&'"'"'/; s/=/'"' '"'/' <<< "$n"))
+        if [ -n "${query[1]}" ] && grep -qv '\(body_xml\|author\|from_dispname\|dialog_partner\|date\)' <<< "${query[0]}"
+        then
+            echo -e "Bad column name (${query[0]}) in query!\n\n$syntax"
+            exit 1
+        fi
+        grep -qv '=' <<< "$n" && { echo "Bad query format: '$n'"; exit 1; }
+        where="$where $(sed 's/\(.*\)=\(.*\)/\1 LIKE '"'"'%\2%'"'"'/' <<< "$n")"
+    done
+    call_db "$where"
+fi
+

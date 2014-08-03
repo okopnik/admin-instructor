@@ -1,0 +1,28 @@
+#!/bin/bash
+# Created by Ben Okopnik on Thu Jul 31 14:32:06 PDT 2014
+# Gets full or incremental dump of all IRT conversations from the Skype database
+
+grep -q -- '^--full$\|^--incremental$' <<< "$1" || { printf "Usage: ${0##*/} <--full|--incremental>\n"; exit; }
+
+# Auto-generated timestamp of the last retrieved IRT record; DO NOT MODIFY BY HAND!
+LAST_TS=1406246302
+
+if [ "$1" == '--incremental' ]
+then
+    INCR="AND timestamp > $LAST_TS"
+else
+    # Create header for table
+    echo -e 'DROP TABLE Messages;\nCREATE TABLE Messages(id INT NOT NULL AUTO_INCREMENT,PRIMARY KEY(id),tag VARCHAR(64),name VARCHAR(64),timestamp INT,text VARCHAR(2048));'
+fi
+
+# Find where the user DB is located
+db=$(find ~/.Skype -name main.db)
+
+# Extract the chatname ID for IRT
+chat=$(sqlite3 $db "SELECT identity FROM Conversations WHERE displayname='Instructor Red Telephone'")
+
+# Generate the insert statements AND update the LAST_TS timestamp
+sqlite3 $db <<! | tee >(tail -n 1|awk -F, '{print $4}'|while read str; do sed -i 's/^\(LAST_TS=\).*/\1'"$str"'/' $0; done)
+.mode insert Messages
+SELECT NULL, author, from_dispname, timestamp, body_xml FROM Messages WHERE chatname LIKE '$chat%' AND body_xml IS NOT NULL $INCR;
+!
